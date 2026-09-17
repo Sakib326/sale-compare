@@ -15,6 +15,8 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <!-- JSZip CDN for reading docx directly in browser -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- PDF.js CDN for reading exchange report pdf directly in browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -27,15 +29,10 @@
           Sales Ledger &amp; Docx <span class="gradient-text">Comparator</span>
         </h1>
         <p class="subtitle">
-          Upload both the <strong>Excel Ledger (.xlsx)</strong> and
-          <strong>Word Document (.docx)</strong>. Compares via
-          <strong>Primary Key 1: <code>Model</code></strong> (Doc's Goods Name suffix) and
-          <strong>Primary Key 2: <code>Barcode</code> &harr; <code>Style No.</code></strong>.
-          Includes price/discount differences and sum totals.
-          <strong
-            >Unmatched rows from both Excel and Doc are retained and color
-            highlighted.</strong
-          >
+          Upload <strong>Excel Ledger (.xlsx)</strong>,
+          <strong>Word Document (.docx)</strong>, and optionally
+          <strong>Exchange Report (.pdf)</strong>. Compares Excel vs Doc, then plugs
+          <strong>NEW type</strong> items from the PDF into any Excel unmatched items.
         </p>
       </header>
 
@@ -65,8 +62,7 @@
           <div class="card-content">
             <h3>1. Upload Excel File (.xlsx)</h3>
             <p>
-              Sales Ledger with Product Name, Model, Barcode, Qty, Price,
-              Discount
+              Sales Ledger with Product Name, Model, Barcode, Qty, Price
             </p>
             <label for="excelInput" class="file-label" id="excelLabel">
               <span id="excelFileName">Choose Excel File</span>
@@ -101,13 +97,46 @@
           <div class="card-content">
             <h3>2. Upload Word Document (.docx)</h3>
             <p>
-              Daily Sales Information with Goods Name, Style, Unit Price, U. Dis
+              Daily Sales Information with Goods Name, Style, Unit Price
             </p>
             <label for="docInput" class="file-label secondary" id="docLabel">
               <span id="docFileName">Choose Docx File</span>
             </label>
             <input type="file" id="docInput" accept=".docx" />
             <div class="file-status" id="docStatus">No file selected</div>
+          </div>
+        </div>
+
+        <!-- PDF Uploader Card -->
+        <div class="upload-card" id="pdfDropZone">
+          <div class="card-icon pdf-icon">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              ></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="9" y1="15" x2="15" y2="15"></line>
+            </svg>
+          </div>
+          <div class="card-content">
+            <h3>3. Upload Exchange PDF (.pdf)</h3>
+            <p>
+              Exchange Report (Plugs "NEW" type items to Excel unmatched)
+            </p>
+            <label for="pdfInput" class="file-label pdf-btn" id="pdfLabel">
+              <span id="pdfFileName">Choose PDF File</span>
+            </label>
+            <input type="file" id="pdfInput" accept=".pdf" />
+            <div class="file-status" id="pdfStatus">Optional file</div>
           </div>
         </div>
       </div>
@@ -171,6 +200,12 @@
           </div>
         </div>
         <div class="stat-card">
+          <div class="stat-label">PDF Plugged (NEW)</div>
+          <div class="stat-value pdf-plugged-color" id="pdfPluggedCount">
+            0
+          </div>
+        </div>
+        <div class="stat-card">
           <div class="stat-label">Total Result Rows</div>
           <div class="stat-value total-color" id="totalRowCount">0</div>
         </div>
@@ -183,13 +218,19 @@
             ><span class="legend-badge legend-matched"></span> Matched in Both</span
           >
           <span class="legend-item"
+            ><span class="legend-badge legend-pdf"></span> Plugged from PDF (NEW)</span
+          >
+          <span class="legend-item"
             ><span class="legend-badge legend-warning"></span> Prefix Mismatch (Warning)</span
           >
           <span class="legend-item"
-            ><span class="legend-badge legend-excel"></span> Excel Only (Not in Doc)</span
+            ><span class="legend-badge legend-online-vat"></span> Online-15% Vat</span
           >
           <span class="legend-item"
-            ><span class="legend-badge legend-doc"></span> Doc Only (Not in Excel)</span
+            ><span class="legend-badge legend-excel"></span> Excel Only (Unmatched)</span
+          >
+          <span class="legend-item"
+            ><span class="legend-badge legend-doc"></span> Doc Only (Unmatched)</span
           >
         </div>
         <div class="filter-controls">
@@ -197,8 +238,10 @@
           <select id="statusFilter">
             <option value="ALL">Show All Rows</option>
             <option value="MATCHED">Matched Only</option>
+            <option value="PDF_PLUGGED">PDF Plugged Only (NEW)</option>
             <option value="PREFIX_MISMATCH">Prefix Mismatch (Warnings)</option>
-            <option value="UNMATCHED">Unmatched Only (Both)</option>
+            <option value="ONLINE_VAT">Online-15% Vat (Price Diff > 1)</option>
+            <option value="UNMATCHED">Unmatched Only (Excel &amp; Doc)</option>
             <option value="EXCEL_ONLY">Excel Only</option>
             <option value="DOC_ONLY">Doc Only</option>
           </select>

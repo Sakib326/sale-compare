@@ -4,6 +4,9 @@ let excelFileName = "";
 let docFile = null;
 let docFileName = "";
 let docXmlContent = null;
+let pdfFile = null;
+let pdfFileName = "";
+let pdfItems = []; // Extracted NEW type items from PDF
 let comparisonRows = [];
 
 // DOM Elements
@@ -16,6 +19,11 @@ const docInput = document.getElementById("docInput");
 const docFileNameSpan = document.getElementById("docFileName");
 const docStatus = document.getElementById("docStatus");
 const docDropZone = document.getElementById("docDropZone");
+
+const pdfInput = document.getElementById("pdfInput");
+const pdfFileNameSpan = document.getElementById("pdfFileName");
+const pdfStatus = document.getElementById("pdfStatus");
+const pdfDropZone = document.getElementById("pdfDropZone");
 
 const compareBtn = document.getElementById("compareBtn");
 const downloadBtn = document.getElementById("downloadBtn");
@@ -45,8 +53,18 @@ docInput.addEventListener("change", (e) => {
   if (file) handleDocFile(file);
 });
 
+if (pdfInput) {
+  pdfInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) handlePdfFile(file);
+  });
+}
+
 setupDragAndDrop(excelDropZone, handleExcelFile);
 setupDragAndDrop(docDropZone, handleDocFile);
+if (pdfDropZone) {
+  setupDragAndDrop(pdfDropZone, handlePdfFile);
+}
 
 function setupDragAndDrop(zone, handler) {
   zone.addEventListener("dragover", (e) => {
@@ -63,6 +81,14 @@ function setupDragAndDrop(zone, handler) {
       handler(e.dataTransfer.files[0]);
     }
   });
+}
+
+function checkReadyToCompare() {
+  if (excelWorkbook && docXmlContent) {
+    compareBtn.disabled = false;
+  } else {
+    compareBtn.disabled = true;
+  }
 }
 
 function handleExcelFile(file) {
@@ -107,10 +133,116 @@ function handleDocFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-function checkReadyToCompare() {
-  if (excelWorkbook && docXmlContent) {
-    compareBtn.removeAttribute("disabled");
+function handlePdfFile(file) {
+  pdfFile = file;
+  pdfFileName = file.name;
+  if (pdfFileNameSpan) pdfFileNameSpan.textContent = "Change PDF File";
+  if (pdfStatus) {
+    pdfStatus.textContent = `✓ Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    pdfStatus.className = "file-status active";
   }
+  if (pdfDropZone) pdfDropZone.classList.add("loaded");
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const typedArray = new Uint8Array(e.target.result);
+        const pdfDoc = await pdfjsLib.getDocument(typedArray).promise;
+        pdfItems = await extractPdfItems(pdfDoc);
+        if (pdfStatus) {
+          pdfStatus.textContent = `✓ Loaded ${pdfItems.length} 'NEW' items from PDF`;
+        }
+      }
+    } catch (err) {
+      console.warn("PDF parsing warning:", err);
+      if (pdfStatus) {
+        pdfStatus.textContent = `✓ PDF loaded (${file.name})`;
+      }
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Extract ONLY 'NEW' type items from the Exchange PDF
+async function extractPdfItems(pdfDoc) {
+  const items = [];
+  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+    const page = await pdfDoc.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    
+    // Group text items by their vertical position (Y coordinate) to reconstruct lines
+    const lineMap = new Map();
+    for (const item of textContent.items) {
+      const y = Math.round(item.transform[5]);
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push(item);
+    }
+
+    // Sort lines top to bottom
+    const sortedY = Array.from(lineMap.keys()).sort((a, b) => b - a);
+
+    for (const y of sortedY) {
+      const textItems = lineMap.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
+      const lineStr = textItems.map((t) => t.str).join(" ").trim();
+
+      // Look for lines containing "NEW"
+      // Format: [DATE] [BILL NUMBER] NEW [PRODUCT] (Qty: X) [BARCODE] [DISC] [TOTAL]
+      // Example: 16-09-2026 ED-33-20260917-00109 NEW Casual Shirt Full (Qty: 1) SI0066011252 0.00 1660.00
+      if (/\bNEW\b/i.test(lineStr)) {
+        // Extract Barcode: standard 12-character format like SI0023010971, CT0015011317, AI0050011104, TI0067011404, PI0674011311
+        const barcodeMatch = lineStr.match(/\b([A-Z]{2}\d{10})\b/);
+        const barcode = barcodeMatch ? barcodeMatch[1].trim() : "";
+
+        // Extract Qty: (Qty: X)
+        let qty = 1;
+        const qtyMatch = lineStr.match(/Qty:\s*(\d+)/i);
+        if (qtyMatch) {
+          qty = parseInt(qtyMatch[1], 10) || 1;
+        }
+
+        // Extract Total / Price: typically the last numbers in line (e.g. 0.00 1660.00)
+        const numbers = lineStr.match(/(\d+\.\d{2})/g);
+        let totalPrice = 0;
+        let discount = 0;
+        if (numbers && numbers.length >= 2) {
+          discount = parseFloat(numbers[numbers.length - 2]);
+          totalPrice = parseFloat(numbers[numbers.length - 1]);
+        } else if (numbers && numbers.length === 1) {
+          totalPrice = parseFloat(numbers[0]);
+        }
+
+        const unitPrice = qty > 0 ? Math.round((totalPrice / qty) * 100) / 100 : totalPrice;
+
+        // Extract Product Name: text between "NEW" and "(Qty:"
+        let productName = "";
+        const prodMatch = lineStr.match(/NEW\s+(.*?)(?=\(Qty|\b[A-Z]{2}\d{10}\b|$)/i);
+        if (prodMatch) {
+          productName = prodMatch[1].trim();
+        }
+
+        // Extract Bill Number (e.g. ED-33-20260917-00109)
+        const billMatch = lineStr.match(/\b(ED-[^\s]+|EF\d+)\b/i);
+        const billNumber = billMatch ? billMatch[1] : "";
+
+        // Expand for each quantity
+        for (let q = 0; q < qty; q++) {
+          items.push({
+            type: "NEW",
+            billNumber: billNumber,
+            productName: productName,
+            barcode: barcode,
+            unitPrice: unitPrice,
+            discount: discount,
+            rawLine: lineStr
+          });
+        }
+      }
+    }
+  }
+  return items;
 }
 
 // Compare & Generate Logic
@@ -217,7 +349,9 @@ function executeComparison() {
   // 3. Comparison & Matching by Model
   // Match key: Model (normalized uppercase)
   const docUsed = new Array(docItems.length).fill(false);
+  const pdfUsed = new Array((pdfItems || []).length).fill(false);
   let matchedCount = 0;
+  let pdfPluggedCount = 0;
   let excelUnmatchedCount = 0;
   comparisonRows = [];
 
@@ -313,9 +447,12 @@ function executeComparison() {
           ? Math.round((discNum - docDiscNum) * 100) / 100
           : 0;
 
+      const isOnlineVat = Math.abs(priceDiff) > 1;
+
       comparisonRows.push({
         status: isPrefixMismatch ? "PREFIX_MISMATCH" : "MATCHED",
         statusLabel: isPrefixMismatch ? "Prefix Mismatch" : "Matched",
+        isOnlineVat: isOnlineVat,
         docSl: d.docSl || "-",
         productName: e.productName,
         model: e.model,
@@ -329,20 +466,71 @@ function executeComparison() {
         discDiff: discDiff,
       });
     } else {
-      excelUnmatchedCount++;
-      comparisonRows.push({
-        status: "EXCEL_ONLY",
-        statusLabel: "Excel Only",
-        productName: e.productName,
-        model: e.model,
-        barcode: e.barcode,
-        unitPrice: e.unitPrice,
-        docUnitPrice: "NOT MATCHED",
-        priceDiff: "NOT MATCHED",
-        discount: e.discount,
-        docDiscount: "NOT MATCHED",
-        discDiff: "NOT MATCHED",
-      });
+      // Excel item did NOT match with Word document!
+      // Check if it matches a "NEW" type item from the uploaded Exchange PDF
+      let matchedPdfIdx = -1;
+      if (pdfItems && pdfItems.length > 0) {
+        // Priority 1: Match by Barcode
+        if (eBarcodeKey) {
+          for (let pi = 0; pi < pdfItems.length; pi++) {
+            if (!pdfUsed[pi] && (pdfItems[pi].barcode || "").trim().toUpperCase() === eBarcodeKey) {
+              matchedPdfIdx = pi;
+              break;
+            }
+          }
+        }
+        // Priority 2: Match by Product Name if barcode wasn't found
+        if (matchedPdfIdx === -1 && e.productName) {
+          const eProdNorm = normalizeCode(e.productName);
+          for (let pi = 0; pi < pdfItems.length; pi++) {
+            if (!pdfUsed[pi]) {
+              const pNorm = normalizeCode(pdfItems[pi].productName);
+              if (pNorm && (pNorm === eProdNorm || pNorm.includes(eProdNorm) || eProdNorm.includes(pNorm))) {
+                matchedPdfIdx = pi;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (matchedPdfIdx !== -1) {
+        pdfUsed[matchedPdfIdx] = true;
+        pdfPluggedCount++;
+        const p = pdfItems[matchedPdfIdx];
+
+        comparisonRows.push({
+          status: "PDF_PLUGGED",
+          statusLabel: "PDF Plugged (NEW)",
+          docSl: `PDF:${p.billNumber || "NEW"}`,
+          productName: e.productName,
+          model: e.model,
+          docModel: p.productName || "PDF NEW Item",
+          barcode: e.barcode || p.barcode,
+          unitPrice: e.unitPrice,
+          docUnitPrice: "-",
+          priceDiff: "-",
+          discount: "-",
+          docDiscount: "-",
+          discDiff: "-",
+        });
+      } else {
+        excelUnmatchedCount++;
+        comparisonRows.push({
+          status: "EXCEL_ONLY",
+          statusLabel: "Excel Only",
+          docSl: "-",
+          productName: e.productName,
+          model: e.model,
+          barcode: e.barcode,
+          unitPrice: e.unitPrice,
+          docUnitPrice: "NOT MATCHED",
+          priceDiff: "NOT MATCHED",
+          discount: e.discount,
+          docDiscount: "NOT MATCHED",
+          discDiff: "NOT MATCHED",
+        });
+      }
     }
   }
 
@@ -372,6 +560,8 @@ function executeComparison() {
   matchedCountEl.textContent = matchedCount;
   excelUnmatchedCountEl.textContent = excelUnmatchedCount;
   docUnmatchedCountEl.textContent = docUnmatchedCount;
+  const pdfPluggedCountEl = document.getElementById("pdfPluggedCount");
+  if (pdfPluggedCountEl) pdfPluggedCountEl.textContent = pdfPluggedCount;
   totalRowCountEl.textContent = comparisonRows.length;
   statsContainer.style.display = "grid";
   filterBar.style.display = "flex";
@@ -507,8 +697,12 @@ function renderFilteredRows() {
 
   if (filterVal === "MATCHED") {
     filtered = comparisonRows.filter((r) => r.status === "MATCHED");
+  } else if (filterVal === "PDF_PLUGGED") {
+    filtered = comparisonRows.filter((r) => r.status === "PDF_PLUGGED");
   } else if (filterVal === "PREFIX_MISMATCH") {
     filtered = comparisonRows.filter((r) => r.status === "PREFIX_MISMATCH");
+  } else if (filterVal === "ONLINE_VAT") {
+    filtered = comparisonRows.filter((r) => r.isOnlineVat);
   } else if (filterVal === "UNMATCHED") {
     filtered = comparisonRows.filter(
       (r) => r.status === "EXCEL_ONLY" || r.status === "DOC_ONLY"
@@ -535,7 +729,10 @@ function renderPreview(rows) {
 
     let rowClass = "row-matched";
     let tagClass = "matched";
-    if (item.status === "PREFIX_MISMATCH") {
+    if (item.status === "PDF_PLUGGED") {
+      rowClass = "row-pdf-plugged";
+      tagClass = "pdf-plugged";
+    } else if (item.status === "PREFIX_MISMATCH") {
       rowClass = "row-prefix-mismatch";
       tagClass = "prefix-mismatch";
     } else if (item.status === "EXCEL_ONLY") {
@@ -574,7 +771,10 @@ function renderPreview(rows) {
     // Format difference values
     let priceDiffDisplay = `<span class="unmatched-cell">NOT MATCHED</span>`;
     let priceDiffClass = "col-diff-cell";
-    if (item.priceDiff !== "NOT MATCHED") {
+    if (item.priceDiff === "-") {
+      priceDiffDisplay = `<span class="unmatched-cell">-</span>`;
+      priceDiffClass += " diff-zero";
+    } else if (item.priceDiff !== "NOT MATCHED") {
       const diffVal = Number(item.priceDiff);
       const sign = diffVal > 0 ? "+" : "";
       priceDiffDisplay = `${sign}${diffVal.toFixed(2)}`;
@@ -588,7 +788,10 @@ function renderPreview(rows) {
 
     let discDiffDisplay = `<span class="unmatched-cell">NOT MATCHED</span>`;
     let discDiffClass = "col-diff-cell";
-    if (item.discDiff !== "NOT MATCHED") {
+    if (item.discDiff === "-") {
+      discDiffDisplay = `<span class="unmatched-cell">-</span>`;
+      discDiffClass += " diff-zero";
+    } else if (item.discDiff !== "NOT MATCHED") {
       const diffVal = Number(item.discDiff);
       const sign = diffVal > 0 ? "+" : "";
       discDiffDisplay = `${sign}${diffVal.toFixed(2)}`;
@@ -605,10 +808,15 @@ function renderPreview(rows) {
       modelDisplay = `<code>${escapeHtml(item.model)}</code><div style="font-size:0.75rem; color:#f59e0b; margin-top:2px;">(Doc: ${escapeHtml(item.docModel)})</div>`;
     }
 
+    let statusColContent = `<span class="status-tag ${tagClass}">${escapeHtml(item.statusLabel)}</span>`;
+    if (item.isOnlineVat) {
+      statusColContent += `<div><span class="badge-online-vat">Online-15% Vat</span></div>`;
+    }
+
     tr.innerHTML = `
       <td style="color: var(--text-secondary);">${i + 1}</td>
       <td style="font-weight: 700; color: var(--accent-blue); text-align: center;">${item.docSl !== "-" ? item.docSl : `<span class="unmatched-cell">-</span>`}</td>
-      <td><span class="status-tag ${tagClass}">${escapeHtml(item.statusLabel)}</span></td>
+      <td>${statusColContent}</td>
       <td style="font-weight: 600;">${escapeHtml(item.productName)}</td>
       <td>${modelDisplay}</td>
       <td><code>${escapeHtml(item.barcode)}</code></td>
@@ -659,19 +867,25 @@ downloadBtn.addEventListener("click", () => {
   if (comparisonRows.length === 0) return;
 
   // Prepare worksheet data with requested columns
-  const exportData = comparisonRows.map((r) => ({
-    Status: r.statusLabel,
-    "Doc SL": r.docSl,
-    "Product Name": r.productName,
-    Model: r.model,
-    Barcode: r.barcode,
-    "Unit price": r.unitPrice,
-    "doc u. price": r.docUnitPrice,
-    "Price Diff": r.priceDiff,
-    Discount: r.discount,
-    "doc discount": r.docDiscount,
-    "Disc Diff": r.discDiff,
-  }));
+  const exportData = comparisonRows.map((r) => {
+    let statusText = r.statusLabel;
+    if (r.isOnlineVat) {
+      statusText += " (Online-15% Vat)";
+    }
+    return {
+      Status: statusText,
+      "Doc SL": r.docSl,
+      "Product Name": r.productName,
+      Model: r.model,
+      Barcode: r.barcode,
+      "Unit price": r.unitPrice,
+      "doc u. price": r.docUnitPrice,
+      "Price Diff": r.priceDiff,
+      Discount: r.discount,
+      "doc discount": r.docDiscount,
+      "Disc Diff": r.discDiff,
+    };
+  });
 
   // Calculate totals for sums row
   let sumUnitPrice = 0;

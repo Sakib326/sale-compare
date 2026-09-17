@@ -105,12 +105,12 @@ body {
 /* Upload Grid */
 .upload-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
   margin-bottom: 28px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .upload-grid {
     grid-template-columns: 1fr;
   }
@@ -121,7 +121,7 @@ body {
   backdrop-filter: blur(12px);
   border: 1px solid var(--card-border);
   border-radius: var(--border-radius);
-  padding: 28px 24px;
+  padding: 24px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -147,13 +147,13 @@ body {
 }
 
 .card-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .excel-icon {
@@ -168,26 +168,33 @@ body {
   border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
+.pdf-icon {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
 .card-content h3 {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   margin-bottom: 6px;
 }
 
 .card-content p {
   color: var(--text-secondary);
-  font-size: 0.88rem;
-  margin-bottom: 20px;
+  font-size: 0.84rem;
+  margin-bottom: 18px;
+  line-height: 1.4;
 }
 
 .file-label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 22px;
+  padding: 9px 20px;
   background: linear-gradient(135deg, #059669, #10b981);
   color: #ffffff;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
   border-radius: 10px;
   cursor: pointer;
@@ -196,6 +203,10 @@ body {
 
 .file-label.secondary {
   background: linear-gradient(135deg, #2563eb, #3b82f6);
+}
+
+.file-label.pdf-btn {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
 }
 
 .file-label:hover {
@@ -208,8 +219,8 @@ input[type="file"] {
 }
 
 .file-status {
-  margin-top: 14px;
-  font-size: 0.82rem;
+  margin-top: 12px;
+  font-size: 0.8rem;
   color: var(--text-secondary);
   word-break: break-word;
 }
@@ -308,6 +319,10 @@ input[type="file"] {
 
 .stat-value.doc-unmatched-color {
   color: #f43f5e;
+}
+
+.stat-value.pdf-plugged-color {
+  color: #c084fc;
 }
 
 .stat-value.total-color {
@@ -477,6 +492,14 @@ tr.row-prefix-mismatch:hover {
   background: rgba(245, 158, 11, 0.25);
 }
 
+tr.row-pdf-plugged {
+  background: rgba(168, 85, 247, 0.12); /* Vibrant purple highlight */
+}
+
+tr.row-pdf-plugged:hover {
+  background: rgba(168, 85, 247, 0.22);
+}
+
 tr.row-excel-only {
   background: rgba(239, 68, 68, 0.08);
 }
@@ -509,6 +532,12 @@ tr.row-doc-only:hover {
   border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
+.status-tag.pdf-plugged {
+  background: rgba(168, 85, 247, 0.25);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.5);
+}
+
 .status-tag.prefix-mismatch {
   background: rgba(245, 158, 11, 0.25);
   color: #f59e0b;
@@ -525,6 +554,29 @@ tr.row-doc-only:hover {
   background: rgba(244, 63, 94, 0.2);
   color: #fb7185;
   border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.status-tag.online-vat, .badge-online-vat {
+  display: inline-block;
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.5);
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.legend-online-vat {
+  background: rgba(249, 115, 22, 0.5);
+  border: 1px solid #f97316;
+}
+
+.legend-pdf {
+  background: rgba(168, 85, 247, 0.5);
+  border: 1px solid #a855f7;
 }
 
 .legend-warning {

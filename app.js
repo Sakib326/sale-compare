@@ -262,12 +262,15 @@ function executeComparison() {
 
   let headerRowIndex = -1;
   let colIndices = {
+    invoiceNo: -1,
     productName: -1,
     model: -1,
     barcode: -1,
     quantity: -1,
     unitPrice: -1,
     discount: -1,
+    billDiscount: -1,
+    subTotal: -1,
   };
 
   for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
@@ -281,12 +284,15 @@ function executeComparison() {
         if (!cellVal) return;
         const col = String(cellVal).trim().toLowerCase();
         if (col === "product name") colIndices.productName = idx;
+        else if (col === "invoice no." || col === "invoice no" || col === "invoiceno") colIndices.invoiceNo = idx;
         else if (col === "model") colIndices.model = idx;
         else if (col === "barcode") colIndices.barcode = idx;
         else if (col === "quantity" || col === "qty") colIndices.quantity = idx;
         else if (col === "unit price" || col === "unitprice")
           colIndices.unitPrice = idx;
         else if (col === "discount" || col === "dis") colIndices.discount = idx;
+        else if (col === "bill discount" || col === "billdiscount") colIndices.billDiscount = idx;
+        else if (col === "sub total" || col === "subtotal") colIndices.subTotal = idx;
       });
       break;
     }
@@ -297,13 +303,84 @@ function executeComparison() {
     return;
   }
 
-  const excelItems = [];
+  // Pre-pass: Group Excel lines by invoice to determine each invoice's Total Bill Discount and Total Gross/Subtotal
+  // In Excel Sales Ledger, multi-item invoices have Invoice No. on the first row, and continuation rows have blank/null Invoice No.
+  const rawExcelRows = [];
+  let currentInvoiceGroup = 0;
+  let currentInvoiceNo = "";
+
   for (let r = headerRowIndex + 1; r < rawRows.length; r++) {
     const row = rawRows[r];
     if (!row || row.length === 0) continue;
 
+    const prodName = colIndices.productName !== -1 && row[colIndices.productName] !== undefined
+      ? String(row[colIndices.productName]).trim()
+      : "";
+    const bcode = colIndices.barcode !== -1 && row[colIndices.barcode] !== undefined
+      ? String(row[colIndices.barcode]).trim()
+      : "";
+    if (!prodName && !bcode) continue;
+
+    const rawInv = colIndices.invoiceNo !== -1 && row[colIndices.invoiceNo] !== undefined
+      ? String(row[colIndices.invoiceNo]).trim()
+      : "";
+    if (rawInv) {
+      currentInvoiceNo = rawInv;
+      currentInvoiceGroup++;
+    }
+
+    let qty = 1;
+    if (colIndices.quantity !== -1 && row[colIndices.quantity] !== undefined) {
+      const parsedQty = parseFloat(row[colIndices.quantity]);
+      if (!isNaN(parsedQty) && parsedQty > 0) qty = Math.round(parsedQty);
+    }
+
+    const unitPriceNum = colIndices.unitPrice !== -1 && row[colIndices.unitPrice] !== undefined
+      ? (typeof row[colIndices.unitPrice] === "number" ? row[colIndices.unitPrice] : parseFloat(String(row[colIndices.unitPrice]).replace(/,/g, "")) || 0)
+      : 0;
+
+    const lineDiscountNum = colIndices.discount !== -1 && row[colIndices.discount] !== undefined
+      ? (typeof row[colIndices.discount] === "number" ? row[colIndices.discount] : parseFloat(String(row[colIndices.discount]).replace(/,/g, "")) || 0)
+      : 0;
+
+    const lineBillDiscountNum = colIndices.billDiscount !== -1 && row[colIndices.billDiscount] !== undefined
+      ? (typeof row[colIndices.billDiscount] === "number" ? row[colIndices.billDiscount] : parseFloat(String(row[colIndices.billDiscount]).replace(/,/g, "")) || 0)
+      : 0;
+
+    const lineSubTotalNum = colIndices.subTotal !== -1 && row[colIndices.subTotal] !== undefined
+      ? (typeof row[colIndices.subTotal] === "number" ? row[colIndices.subTotal] : parseFloat(String(row[colIndices.subTotal]).replace(/,/g, "")) || 0)
+      : (unitPriceNum * qty);
+
+    rawExcelRows.push({
+      invoiceGroup: currentInvoiceGroup,
+      invoiceNo: currentInvoiceNo,
+      row: row,
+      qty: qty,
+      unitPriceNum: unitPriceNum,
+      lineDiscountNum: lineDiscountNum,
+      lineBillDiscountNum: lineBillDiscountNum,
+      lineSubTotalNum: lineSubTotalNum,
+    });
+  }
+
+  // Calculate total Bill Discount and total SubTotal per invoice group
+  const invoiceStats = {};
+  for (const item of rawExcelRows) {
+    const grp = item.invoiceGroup;
+    if (!invoiceStats[grp]) {
+      invoiceStats[grp] = { totalBillDiscount: 0, totalSubTotal: 0 };
+    }
+    if (item.lineBillDiscountNum > 0) {
+      invoiceStats[grp].totalBillDiscount += item.lineBillDiscountNum;
+    }
+    invoiceStats[grp].totalSubTotal += item.lineSubTotalNum;
+  }
+
+  const excelItems = [];
+  for (const item of rawExcelRows) {
+    const row = item.row;
     const productName =
-      row[colIndices.productName] !== undefined
+      colIndices.productName !== -1 && row[colIndices.productName] !== undefined
         ? String(row[colIndices.productName]).trim()
         : "";
     const model =
@@ -314,31 +391,32 @@ function executeComparison() {
       colIndices.barcode !== -1 && row[colIndices.barcode] !== undefined
         ? String(row[colIndices.barcode]).trim()
         : "";
-    if (!productName && !barcode) continue;
 
-    let qty = 1;
-    if (colIndices.quantity !== -1 && row[colIndices.quantity] !== undefined) {
-      const parsedQty = parseFloat(row[colIndices.quantity]);
-      if (!isNaN(parsedQty) && parsedQty > 0) qty = Math.round(parsedQty);
+    const grpStats = invoiceStats[item.invoiceGroup] || { totalBillDiscount: 0, totalSubTotal: 0 };
+    
+    // Split ratio of bill discount:
+    // If totalSubTotal > 0 and totalBillDiscount > 0, ratio = totalBillDiscount / totalSubTotal
+    let billDiscountRatio = 0;
+    if (grpStats.totalSubTotal > 0 && grpStats.totalBillDiscount > 0) {
+      billDiscountRatio = grpStats.totalBillDiscount / grpStats.totalSubTotal;
     }
 
-    const unitPrice =
-      colIndices.unitPrice !== -1 && row[colIndices.unitPrice] !== undefined
-        ? row[colIndices.unitPrice]
-        : "";
-    const discount =
-      colIndices.discount !== -1 && row[colIndices.discount] !== undefined
-        ? row[colIndices.discount]
-        : 0;
+    // Line discount per unit
+    const unitLineDiscount = item.qty > 0 ? (item.lineDiscountNum / item.qty) : item.lineDiscountNum;
+    // Split of bill discount for 1 unit: (unitPrice * billDiscountRatio)
+    const unitBillDiscount = Math.round(item.unitPriceNum * billDiscountRatio * 100) / 100;
+    // Total discount per unit = item discount + split ratio of bill discount
+    const totalUnitDiscount = Math.round((unitLineDiscount + unitBillDiscount) * 100) / 100;
 
     // Expand rows for Quantity > 1
-    for (let i = 0; i < qty; i++) {
+    for (let i = 0; i < item.qty; i++) {
       excelItems.push({
+        invoiceNo: item.invoiceNo,
         productName: productName,
         model: model,
         barcode: barcode,
-        unitPrice: unitPrice,
-        discount: discount,
+        unitPrice: item.unitPriceNum || (row[colIndices.unitPrice] !== undefined ? row[colIndices.unitPrice] : ""),
+        discount: totalUnitDiscount,
       });
     }
   }

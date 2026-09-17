@@ -142,7 +142,7 @@
       <div class="preview-header">
         <div>
           <h2>Final Result Comparison Table</h2>
-          <p>Columns: Status | Product Name | Model | Barcode | Unit price | doc u. price | Discount | doc discount</p>
+          <p>Columns: Status | Product Name | Model | Barcode | Unit price | doc u. price | Price Diff | Discount | doc discount | Disc Diff</p>
         </div>
         <div class="preview-badge" id="previewCountBadge">0 records</div>
       </div>
@@ -158,13 +158,18 @@
               <th>Barcode</th>
               <th>Unit price</th>
               <th class="col-highlight">doc u. price</th>
+              <th class="col-diff">Price Diff</th>
               <th>Discount</th>
               <th class="col-highlight">doc discount</th>
+              <th class="col-diff">Disc Diff</th>
             </tr>
           </thead>
           <tbody id="previewTableBody">
             <!-- Dynamically populated -->
           </tbody>
+          <tfoot id="previewTableFoot">
+            <!-- Sum totals will be populated here -->
+          </tfoot>
         </table>
       </div>
     </section>

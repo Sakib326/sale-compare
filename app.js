@@ -464,6 +464,7 @@ function executeComparison() {
         discount: e.discount,
         docDiscount: d.discount,
         discDiff: discDiff,
+        docPaymentType: d.paymentType || "",
       });
     } else {
       // Excel item did NOT match with Word document!
@@ -552,7 +553,22 @@ function executeComparison() {
         discount: "NOT MATCHED",
         docDiscount: d.discount,
         discDiff: "NOT MATCHED",
+        docPaymentType: d.paymentType || "",
       });
+    }
+  }
+
+  // Calculate Total Doc Cash and Doc Card from all doc items
+  let totalDocCash = 0;
+  let totalDocCard = 0;
+  for (const d of docItems) {
+    const netVal = (typeof d.unitPrice === "number" ? d.unitPrice : parseFloat(String(d.unitPrice).replace(/,/g, "")) || 0)
+      - (typeof d.discount === "number" ? d.discount : parseFloat(String(d.discount).replace(/,/g, "")) || 0);
+    const pType = (d.paymentType || "").trim().toUpperCase();
+    if (pType === "BDT") {
+      totalDocCash += netVal;
+    } else {
+      totalDocCard += netVal;
     }
   }
 
@@ -562,6 +578,14 @@ function executeComparison() {
   docUnmatchedCountEl.textContent = docUnmatchedCount;
   const pdfPluggedCountEl = document.getElementById("pdfPluggedCount");
   if (pdfPluggedCountEl) pdfPluggedCountEl.textContent = pdfPluggedCount;
+  const docCashTotalEl = document.getElementById("docCashTotal");
+  if (docCashTotalEl) {
+    docCashTotalEl.textContent = Math.round(totalDocCash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const docCardTotalEl = document.getElementById("docCardTotal");
+  if (docCardTotalEl) {
+    docCardTotalEl.textContent = Math.round(totalDocCard).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   totalRowCountEl.textContent = comparisonRows.length;
   statsContainer.style.display = "grid";
   filterBar.style.display = "flex";
@@ -668,6 +692,7 @@ function parseDocxXml(xmlStr) {
 
       const priceNum = parseFloat(priceStr.replace(/,/g, ""));
       const disNum = parseFloat(disStr.replace(/,/g, ""));
+      const paymentType = (parts[offset + 5] || "").trim();
 
       items.push({
         docSl: docSlNumber,
@@ -677,6 +702,7 @@ function parseDocxXml(xmlStr) {
         barcode: styleNo,
         unitPrice: isNaN(priceNum) ? priceStr : priceNum,
         discount: isNaN(disNum) ? disStr : disNum,
+        paymentType: paymentType,
       });
       continue;
     }
@@ -847,6 +873,23 @@ function renderPreview(rows) {
     if (typeof r.discDiff === "number") sumDiscDiff += r.discDiff;
   }
 
+  // Calculate Doc Cash and Doc Card for currently displayed rows
+  let rowDocCash = 0;
+  let rowDocCard = 0;
+  for (const r of rows) {
+    if (r.docUnitPrice !== "NOT MATCHED" && r.docUnitPrice !== "-") {
+      const pVal = typeof r.docUnitPrice === "number" ? r.docUnitPrice : parseFloat(String(r.docUnitPrice).replace(/,/g, "")) || 0;
+      const dVal = (r.docDiscount !== "NOT MATCHED" && r.docDiscount !== "-") ? (typeof r.docDiscount === "number" ? r.docDiscount : parseFloat(String(r.docDiscount).replace(/,/g, "")) || 0) : 0;
+      const netVal = pVal - dVal;
+      const pType = (r.docPaymentType || "").trim().toUpperCase();
+      if (pType === "BDT") {
+        rowDocCash += netVal;
+      } else if (pType) {
+        rowDocCard += netVal;
+      }
+    }
+  }
+
   if (previewTableFoot) {
     previewTableFoot.innerHTML = `
       <tr>
@@ -857,6 +900,15 @@ function renderPreview(rows) {
         <td class="sum-value">${sumDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="sum-value">${sumDocDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="sum-diff">${sumDiscDiff > 0 ? "+" : ""}${sumDiscDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      </tr>
+      <tr class="footer-payment-row">
+        <td colspan="6" class="total-label" style="color: #94a3b8;">DOC PAYMENT BREAKDOWN:</td>
+        <td colspan="3">
+          <span class="payment-tag-cash">💵 Doc Cash (BDT): ${rowDocCash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </td>
+        <td colspan="3">
+          <span class="payment-tag-card">💳 Doc Card (Other): ${rowDocCard.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </td>
       </tr>
     `;
   }
@@ -917,6 +969,51 @@ downloadBtn.addEventListener("click", () => {
     Discount: Math.round(sumDiscount * 100) / 100,
     "doc discount": Math.round(sumDocDiscount * 100) / 100,
     "Disc Diff": Math.round(sumDiscDiff * 100) / 100,
+  });
+
+  // Calculate overall Doc Cash and Doc Card for export
+  let expDocCash = 0;
+  let expDocCard = 0;
+  for (const r of comparisonRows) {
+    if (r.docUnitPrice !== "NOT MATCHED" && r.docUnitPrice !== "-") {
+      const pVal = typeof r.docUnitPrice === "number" ? r.docUnitPrice : parseFloat(String(r.docUnitPrice).replace(/,/g, "")) || 0;
+      const dVal = (r.docDiscount !== "NOT MATCHED" && r.docDiscount !== "-") ? (typeof r.docDiscount === "number" ? r.docDiscount : parseFloat(String(r.docDiscount).replace(/,/g, "")) || 0) : 0;
+      const netVal = pVal - dVal;
+      const pType = (r.docPaymentType || "").trim().toUpperCase();
+      if (pType === "BDT") {
+        expDocCash += netVal;
+      } else if (pType) {
+        expDocCard += netVal;
+      }
+    }
+  }
+
+  exportData.push({
+    Status: "DOC CASH (BDT)",
+    "Doc SL": "",
+    "Product Name": "",
+    Model: "",
+    Barcode: "",
+    "Unit price": "",
+    "doc u. price": Math.round(expDocCash * 100) / 100,
+    "Price Diff": "",
+    Discount: "",
+    "doc discount": "",
+    "Disc Diff": "",
+  });
+
+  exportData.push({
+    Status: "DOC CARD (OTHER)",
+    "Doc SL": "",
+    "Product Name": "",
+    Model: "",
+    Barcode: "",
+    "Unit price": "",
+    "doc u. price": Math.round(expDocCard * 100) / 100,
+    "Price Diff": "",
+    Discount: "",
+    "doc discount": "",
+    "Disc Diff": "",
   });
 
   const worksheet = XLSX.utils.json_to_sheet(exportData);

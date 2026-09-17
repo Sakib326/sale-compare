@@ -469,12 +469,20 @@ tr.row-matched:hover {
   background: rgba(16, 185, 129, 0.12);
 }
 
+tr.row-prefix-mismatch {
+  background: rgba(245, 158, 11, 0.15); /* Distinct warm warning highlight */
+}
+
+tr.row-prefix-mismatch:hover {
+  background: rgba(245, 158, 11, 0.25);
+}
+
 tr.row-excel-only {
-  background: rgba(245, 158, 11, 0.08);
+  background: rgba(239, 68, 68, 0.08);
 }
 
 tr.row-excel-only:hover {
-  background: rgba(245, 158, 11, 0.16);
+  background: rgba(239, 68, 68, 0.16);
 }
 
 tr.row-doc-only {
@@ -501,16 +509,27 @@ tr.row-doc-only:hover {
   border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
+.status-tag.prefix-mismatch {
+  background: rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+}
+
 .status-tag.excel-only {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
 .status-tag.doc-only {
   background: rgba(244, 63, 94, 0.2);
   color: #fb7185;
   border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.legend-warning {
+  background: rgba(245, 158, 11, 0.5);
+  border: 1px solid #f59e0b;
 }
 
 .unmatched-cell {

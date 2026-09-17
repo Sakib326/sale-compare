@@ -135,12 +135,14 @@ function executeComparison() {
     barcode: -1,
     quantity: -1,
     unitPrice: -1,
-    discount: -1
+    discount: -1,
   };
 
   for (let r = 0; r < Math.min(rawRows.length, 15); r++) {
     const row = rawRows[r] || [];
-    const pIndex = row.findIndex((c) => c && String(c).trim().toLowerCase() === "product name");
+    const pIndex = row.findIndex(
+      (c) => c && String(c).trim().toLowerCase() === "product name",
+    );
     if (pIndex !== -1) {
       headerRowIndex = r;
       row.forEach((cellVal, idx) => {
@@ -150,7 +152,8 @@ function executeComparison() {
         else if (col === "model") colIndices.model = idx;
         else if (col === "barcode") colIndices.barcode = idx;
         else if (col === "quantity" || col === "qty") colIndices.quantity = idx;
-        else if (col === "unit price" || col === "unitprice") colIndices.unitPrice = idx;
+        else if (col === "unit price" || col === "unitprice")
+          colIndices.unitPrice = idx;
         else if (col === "discount" || col === "dis") colIndices.discount = idx;
       });
       break;
@@ -167,9 +170,18 @@ function executeComparison() {
     const row = rawRows[r];
     if (!row || row.length === 0) continue;
 
-    const productName = row[colIndices.productName] !== undefined ? String(row[colIndices.productName]).trim() : "";
-    const model = colIndices.model !== -1 && row[colIndices.model] !== undefined ? String(row[colIndices.model]).trim() : "";
-    const barcode = colIndices.barcode !== -1 && row[colIndices.barcode] !== undefined ? String(row[colIndices.barcode]).trim() : "";
+    const productName =
+      row[colIndices.productName] !== undefined
+        ? String(row[colIndices.productName]).trim()
+        : "";
+    const model =
+      colIndices.model !== -1 && row[colIndices.model] !== undefined
+        ? String(row[colIndices.model]).trim()
+        : "";
+    const barcode =
+      colIndices.barcode !== -1 && row[colIndices.barcode] !== undefined
+        ? String(row[colIndices.barcode]).trim()
+        : "";
     if (!productName && !barcode) continue;
 
     let qty = 1;
@@ -178,8 +190,14 @@ function executeComparison() {
       if (!isNaN(parsedQty) && parsedQty > 0) qty = Math.round(parsedQty);
     }
 
-    const unitPrice = colIndices.unitPrice !== -1 && row[colIndices.unitPrice] !== undefined ? row[colIndices.unitPrice] : "";
-    const discount = colIndices.discount !== -1 && row[colIndices.discount] !== undefined ? row[colIndices.discount] : 0;
+    const unitPrice =
+      colIndices.unitPrice !== -1 && row[colIndices.unitPrice] !== undefined
+        ? row[colIndices.unitPrice]
+        : "";
+    const discount =
+      colIndices.discount !== -1 && row[colIndices.discount] !== undefined
+        ? row[colIndices.discount]
+        : 0;
 
     // Expand rows for Quantity > 1
     for (let i = 0; i < qty; i++) {
@@ -188,7 +206,7 @@ function executeComparison() {
         model: model,
         barcode: barcode,
         unitPrice: unitPrice,
-        discount: discount
+        discount: discount,
       });
     }
   }
@@ -208,35 +226,56 @@ function executeComparison() {
     const eModelNorm = normalizeCode(e.model);
     const eBarcodeKey = (e.barcode || "").trim().toUpperCase();
     let matchedDocIdx = -1;
+    let isPrefixMismatch = false;
 
-    // 1. Try exact Model match
+    // PRIMARY KEY 1: Model Match
+    // 1A. Exact Model match
     if (eModelKey) {
       for (let i = 0; i < docItems.length; i++) {
-        if (!docUsed[i] && (docItems[i].model || "").trim().toUpperCase() === eModelKey) {
+        if (
+          !docUsed[i] &&
+          (docItems[i].model || "").trim().toUpperCase() === eModelKey
+        ) {
           matchedDocIdx = i;
           break;
         }
       }
     }
 
-    // 2. Try normalized Model match (handles spacing differences like "EF-2634-CPH J" vs "EF-2634-CPHJ" and prefix differences like "EF-26428-FTZF" vs "26428-FTZF")
+    // 1B. Normalized Model match (handles spacing/prefix differences e.g. "EF-2634-CPH J" vs "EF-2634-CPHJ" and "EF-26428-FTZF" vs "26428-FTZF")
     if (matchedDocIdx === -1 && eModelNorm) {
       for (let i = 0; i < docItems.length; i++) {
         if (!docUsed[i]) {
           const dNorm = normalizeCode(docItems[i].model);
-          if (dNorm && (dNorm === eModelNorm || dNorm.includes(eModelNorm) || eModelNorm.includes(dNorm))) {
+          if (
+            dNorm &&
+            (dNorm === eModelNorm ||
+              dNorm.includes(eModelNorm) ||
+              eModelNorm.includes(dNorm))
+          ) {
             matchedDocIdx = i;
+            const dRaw = (docItems[i].model || "").trim().toUpperCase();
+            if (eModelKey !== dRaw) {
+              isPrefixMismatch = true;
+            }
             break;
           }
         }
       }
     }
 
-    // 3. Try Barcode / Style No match fallback
+    // PRIMARY KEY 2: Barcode (Excel) <=> Style No. (Doc)
     if (matchedDocIdx === -1 && eBarcodeKey) {
       for (let i = 0; i < docItems.length; i++) {
-        if (!docUsed[i] && (docItems[i].barcode || "").trim().toUpperCase() === eBarcodeKey) {
+        if (
+          !docUsed[i] &&
+          (docItems[i].barcode || "").trim().toUpperCase() === eBarcodeKey
+        ) {
           matchedDocIdx = i;
+          const dRaw = (docItems[i].model || "").trim().toUpperCase();
+          if (eModelKey !== dRaw) {
+            isPrefixMismatch = true;
+          }
           break;
         }
       }
@@ -248,26 +287,46 @@ function executeComparison() {
       const d = docItems[matchedDocIdx];
 
       // Calculate differences
-      const uPriceNum = typeof e.unitPrice === "number" ? e.unitPrice : parseFloat(String(e.unitPrice).replace(/,/g, ""));
-      const docPriceNum = typeof d.unitPrice === "number" ? d.unitPrice : parseFloat(String(d.unitPrice).replace(/,/g, ""));
-      const priceDiff = (!isNaN(uPriceNum) && !isNaN(docPriceNum)) ? Math.round((uPriceNum - docPriceNum) * 100) / 100 : 0;
+      const uPriceNum =
+        typeof e.unitPrice === "number"
+          ? e.unitPrice
+          : parseFloat(String(e.unitPrice).replace(/,/g, ""));
+      const docPriceNum =
+        typeof d.unitPrice === "number"
+          ? d.unitPrice
+          : parseFloat(String(d.unitPrice).replace(/,/g, ""));
+      const priceDiff =
+        !isNaN(uPriceNum) && !isNaN(docPriceNum)
+          ? Math.round((uPriceNum - docPriceNum) * 100) / 100
+          : 0;
 
-      const discNum = typeof e.discount === "number" ? e.discount : parseFloat(String(e.discount).replace(/,/g, ""));
-      const docDiscNum = typeof d.discount === "number" ? d.discount : parseFloat(String(d.discount).replace(/,/g, ""));
-      const discDiff = (!isNaN(discNum) && !isNaN(docDiscNum)) ? Math.round((discNum - docDiscNum) * 100) / 100 : 0;
+      const discNum =
+        typeof e.discount === "number"
+          ? e.discount
+          : parseFloat(String(e.discount).replace(/,/g, ""));
+      const docDiscNum =
+        typeof d.discount === "number"
+          ? d.discount
+          : parseFloat(String(d.discount).replace(/,/g, ""));
+      const discDiff =
+        !isNaN(discNum) && !isNaN(docDiscNum)
+          ? Math.round((discNum - docDiscNum) * 100) / 100
+          : 0;
 
       comparisonRows.push({
-        status: "MATCHED",
-        statusLabel: "Matched",
+        status: isPrefixMismatch ? "PREFIX_MISMATCH" : "MATCHED",
+        statusLabel: isPrefixMismatch ? "Prefix Mismatch" : "Matched",
+        docSl: d.docSl || "-",
         productName: e.productName,
         model: e.model,
+        docModel: d.model,
         barcode: e.barcode,
         unitPrice: e.unitPrice,
         docUnitPrice: d.unitPrice,
         priceDiff: priceDiff,
         discount: e.discount,
         docDiscount: d.discount,
-        discDiff: discDiff
+        discDiff: discDiff,
       });
     } else {
       excelUnmatchedCount++;
@@ -282,7 +341,7 @@ function executeComparison() {
         priceDiff: "NOT MATCHED",
         discount: e.discount,
         docDiscount: "NOT MATCHED",
-        discDiff: "NOT MATCHED"
+        discDiff: "NOT MATCHED",
       });
     }
   }
@@ -304,7 +363,7 @@ function executeComparison() {
         priceDiff: "NOT MATCHED",
         discount: "NOT MATCHED",
         docDiscount: d.discount,
-        discDiff: "NOT MATCHED"
+        discDiff: "NOT MATCHED",
       });
     }
   }
@@ -326,7 +385,9 @@ function executeComparison() {
 
 // Helper to normalize model string (removes hyphens, spaces, punctuation for robust comparison)
 function normalizeCode(str) {
-  return String(str || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return String(str || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase();
 }
 
 // XML parser for docx paragraphs & tabs
@@ -359,7 +420,10 @@ function parseDocxXml(xmlStr) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    const parts = line.split("\t").map((s) => s.trim()).filter(Boolean);
+    const parts = line
+      .split("\t")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     // Identify sales data rows (having at least 5 tab fields, skipping table headers and summary totals)
     if (
@@ -382,11 +446,19 @@ function parseDocxXml(xmlStr) {
         i += 1;
       }
 
-      const billNo = parts[0] || "";
-      const goodsField = parts[1] || "";
-      const styleNo = parts[2] || "";
-      const priceStr = parts[3] || "";
-      const disStr = parts[4] || "";
+      // If first part is numeric (the SL), offset the fields by 1
+      let offset = 0;
+      let docSlNumber = items.length + 1;
+      if (/^\d+$/.test(parts[0])) {
+        docSlNumber = parseInt(parts[0], 10);
+        offset = 1;
+      }
+
+      const billNo = parts[offset] || "";
+      const goodsField = parts[offset + 1] || "";
+      const styleNo = parts[offset + 2] || "";
+      const priceStr = parts[offset + 3] || "";
+      const disStr = parts[offset + 4] || "";
 
       let model = "";
       let goodsName = goodsField;
@@ -408,12 +480,13 @@ function parseDocxXml(xmlStr) {
       const disNum = parseFloat(disStr.replace(/,/g, ""));
 
       items.push({
+        docSl: docSlNumber,
         billNo: billNo,
         goodsName: goodsName,
         model: model,
         barcode: styleNo,
         unitPrice: isNaN(priceNum) ? priceStr : priceNum,
-        discount: isNaN(disNum) ? disStr : disNum
+        discount: isNaN(disNum) ? disStr : disNum,
       });
       continue;
     }
@@ -434,8 +507,12 @@ function renderFilteredRows() {
 
   if (filterVal === "MATCHED") {
     filtered = comparisonRows.filter((r) => r.status === "MATCHED");
+  } else if (filterVal === "PREFIX_MISMATCH") {
+    filtered = comparisonRows.filter((r) => r.status === "PREFIX_MISMATCH");
   } else if (filterVal === "UNMATCHED") {
-    filtered = comparisonRows.filter((r) => r.status !== "MATCHED");
+    filtered = comparisonRows.filter(
+      (r) => r.status === "EXCEL_ONLY" || r.status === "DOC_ONLY"
+    );
   } else if (filterVal === "EXCEL_ONLY") {
     filtered = comparisonRows.filter((r) => r.status === "EXCEL_ONLY");
   } else if (filterVal === "DOC_ONLY") {
@@ -451,14 +528,17 @@ function renderPreview(rows) {
   previewCountBadge.textContent = `${rows.length} rows displayed`;
   previewTableBody.innerHTML = "";
 
-  const limit = Math.min(rows.length, 120);
-  for (let i = 0; i < limit; i++) {
+  // Render all rows directly in the browser
+  for (let i = 0; i < rows.length; i++) {
     const item = rows[i];
     const tr = document.createElement("tr");
 
     let rowClass = "row-matched";
     let tagClass = "matched";
-    if (item.status === "EXCEL_ONLY") {
+    if (item.status === "PREFIX_MISMATCH") {
+      rowClass = "row-prefix-mismatch";
+      tagClass = "prefix-mismatch";
+    } else if (item.status === "EXCEL_ONLY") {
       rowClass = "row-excel-only";
       tagClass = "excel-only";
     } else if (item.status === "DOC_ONLY") {
@@ -467,21 +547,29 @@ function renderPreview(rows) {
     }
     tr.className = rowClass;
 
-    const unitPriceDisplay = item.unitPrice === "NOT MATCHED"
-      ? `<span class="unmatched-cell">NOT MATCHED</span>`
-      : (typeof item.unitPrice === "number" ? item.unitPrice.toLocaleString() : escapeHtml(item.unitPrice));
+    const unitPriceDisplay =
+      item.unitPrice === "NOT MATCHED"
+        ? `<span class="unmatched-cell">NOT MATCHED</span>`
+        : typeof item.unitPrice === "number"
+          ? item.unitPrice.toLocaleString()
+          : escapeHtml(item.unitPrice);
 
-    const docPriceDisplay = item.docUnitPrice === "NOT MATCHED"
-      ? `<span class="unmatched-cell">NOT MATCHED</span>`
-      : (typeof item.docUnitPrice === "number" ? item.docUnitPrice.toLocaleString() : escapeHtml(item.docUnitPrice));
+    const docPriceDisplay =
+      item.docUnitPrice === "NOT MATCHED"
+        ? `<span class="unmatched-cell">NOT MATCHED</span>`
+        : typeof item.docUnitPrice === "number"
+          ? item.docUnitPrice.toLocaleString()
+          : escapeHtml(item.docUnitPrice);
 
-    const discountDisplay = item.discount === "NOT MATCHED"
-      ? `<span class="unmatched-cell">NOT MATCHED</span>`
-      : escapeHtml(item.discount);
+    const discountDisplay =
+      item.discount === "NOT MATCHED"
+        ? `<span class="unmatched-cell">NOT MATCHED</span>`
+        : escapeHtml(item.discount);
 
-    const docDiscountDisplay = item.docDiscount === "NOT MATCHED"
-      ? `<span class="unmatched-cell">NOT MATCHED</span>`
-      : escapeHtml(item.docDiscount);
+    const docDiscountDisplay =
+      item.docDiscount === "NOT MATCHED"
+        ? `<span class="unmatched-cell">NOT MATCHED</span>`
+        : escapeHtml(item.docDiscount);
 
     // Format difference values
     let priceDiffDisplay = `<span class="unmatched-cell">NOT MATCHED</span>`;
@@ -490,7 +578,12 @@ function renderPreview(rows) {
       const diffVal = Number(item.priceDiff);
       const sign = diffVal > 0 ? "+" : "";
       priceDiffDisplay = `${sign}${diffVal.toFixed(2)}`;
-      priceDiffClass += (diffVal === 0 ? " diff-zero" : (diffVal > 0 ? " diff-positive" : " diff-negative"));
+      priceDiffClass +=
+        diffVal === 0
+          ? " diff-zero"
+          : diffVal > 0
+            ? " diff-positive"
+            : " diff-negative";
     }
 
     let discDiffDisplay = `<span class="unmatched-cell">NOT MATCHED</span>`;
@@ -499,14 +592,25 @@ function renderPreview(rows) {
       const diffVal = Number(item.discDiff);
       const sign = diffVal > 0 ? "+" : "";
       discDiffDisplay = `${sign}${diffVal.toFixed(2)}`;
-      discDiffClass += (diffVal === 0 ? " diff-zero" : (diffVal > 0 ? " diff-positive" : " diff-negative"));
+      discDiffClass +=
+        diffVal === 0
+          ? " diff-zero"
+          : diffVal > 0
+            ? " diff-positive"
+            : " diff-negative";
+    }
+
+    let modelDisplay = `<code>${escapeHtml(item.model)}</code>`;
+    if (item.status === "PREFIX_MISMATCH" && item.docModel && item.model !== item.docModel) {
+      modelDisplay = `<code>${escapeHtml(item.model)}</code><div style="font-size:0.75rem; color:#f59e0b; margin-top:2px;">(Doc: ${escapeHtml(item.docModel)})</div>`;
     }
 
     tr.innerHTML = `
       <td style="color: var(--text-secondary);">${i + 1}</td>
+      <td style="font-weight: 700; color: var(--accent-blue); text-align: center;">${item.docSl !== "-" ? item.docSl : `<span class="unmatched-cell">-</span>`}</td>
       <td><span class="status-tag ${tagClass}">${escapeHtml(item.statusLabel)}</span></td>
       <td style="font-weight: 600;">${escapeHtml(item.productName)}</td>
-      <td><code>${escapeHtml(item.model)}</code></td>
+      <td>${modelDisplay}</td>
       <td><code>${escapeHtml(item.barcode)}</code></td>
       <td>${unitPriceDisplay}</td>
       <td style="background: rgba(56, 189, 248, 0.05); font-weight: 600;">${docPriceDisplay}</td>
@@ -516,16 +620,6 @@ function renderPreview(rows) {
       <td class="${discDiffClass}">${discDiffDisplay}</td>
     `;
     previewTableBody.appendChild(tr);
-  }
-
-  if (rows.length > 120) {
-    const infoTr = document.createElement("tr");
-    infoTr.innerHTML = `
-      <td colspan="11" style="text-align: center; color: var(--accent-blue); padding: 16px; font-weight: 600;">
-        + ${rows.length - 120} more rows ready in the exported Excel file.
-      </td>
-    `;
-    previewTableBody.appendChild(infoTr);
   }
 
   // Calculate and render Sums in Table Footer
@@ -548,7 +642,7 @@ function renderPreview(rows) {
   if (previewTableFoot) {
     previewTableFoot.innerHTML = `
       <tr>
-        <td colspan="5" class="total-label">TOTAL / SUM (${rows.length} rows)</td>
+        <td colspan="6" class="total-label">TOTAL / SUM (${rows.length} rows)</td>
         <td class="sum-value">${sumUnitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="sum-value">${sumDocUnitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td class="sum-diff">${sumPriceDiff > 0 ? "+" : ""}${sumPriceDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -560,22 +654,23 @@ function renderPreview(rows) {
   }
 }
 
-// Download Excel with Colors, Differences, and Sums row
+// Download Excel with Colors, Differences, Doc SL, and Sums row
 downloadBtn.addEventListener("click", () => {
   if (comparisonRows.length === 0) return;
 
   // Prepare worksheet data with requested columns
   const exportData = comparisonRows.map((r) => ({
-    "Status": r.statusLabel,
+    Status: r.statusLabel,
+    "Doc SL": r.docSl,
     "Product Name": r.productName,
-    "Model": r.model,
-    "Barcode": r.barcode,
+    Model: r.model,
+    Barcode: r.barcode,
     "Unit price": r.unitPrice,
     "doc u. price": r.docUnitPrice,
     "Price Diff": r.priceDiff,
-    "Discount": r.discount,
+    Discount: r.discount,
     "doc discount": r.docDiscount,
-    "Disc Diff": r.discDiff
+    "Disc Diff": r.discDiff,
   }));
 
   // Calculate totals for sums row
@@ -597,16 +692,17 @@ downloadBtn.addEventListener("click", () => {
 
   // Append Total / Sum Row
   exportData.push({
-    "Status": "TOTAL SUM",
+    Status: "TOTAL SUM",
+    "Doc SL": "",
     "Product Name": "",
-    "Model": "",
-    "Barcode": "",
+    Model: "",
+    Barcode: "",
     "Unit price": Math.round(sumUnitPrice * 100) / 100,
     "doc u. price": Math.round(sumDocUnitPrice * 100) / 100,
     "Price Diff": Math.round(sumPriceDiff * 100) / 100,
-    "Discount": Math.round(sumDiscount * 100) / 100,
+    Discount: Math.round(sumDiscount * 100) / 100,
     "doc discount": Math.round(sumDocDiscount * 100) / 100,
-    "Disc Diff": Math.round(sumDiscDiff * 100) / 100
+    "Disc Diff": Math.round(sumDiscDiff * 100) / 100,
   });
 
   const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -614,6 +710,7 @@ downloadBtn.addEventListener("click", () => {
   // Set column widths
   worksheet["!cols"] = [
     { wch: 14 }, // Status
+    { wch: 10 }, // Doc SL
     { wch: 28 }, // Product Name
     { wch: 18 }, // Model
     { wch: 18 }, // Barcode
@@ -622,7 +719,7 @@ downloadBtn.addEventListener("click", () => {
     { wch: 14 }, // Price Diff
     { wch: 12 }, // Discount
     { wch: 15 }, // doc discount
-    { wch: 14 }  // Disc Diff
+    { wch: 14 }, // Disc Diff
   ];
 
   const workbook = XLSX.utils.book_new();

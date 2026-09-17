@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sales Ledger & Document Comparison</title>
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- SheetJS CDN -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <!-- JSZip CDN for reading docx directly in browser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="background-decor"></div>
+  
+  <div class="app-container">
+    <header class="app-header">
+      <div class="badge">Sales Comparison & Reconciliation Engine</div>
+      <h1>Sales Ledger &amp; Docx <span class="gradient-text">Comparator</span></h1>
+      <p class="subtitle">
+        Upload both the <strong>Excel Ledger (.xlsx)</strong> and <strong>Word Document (.docx)</strong>.
+        Matches Excel <code>Model</code> against Docx primary key (the last part of Goods Name).
+        Expands multi-quantity rows and includes <code>doc u. price</code> beside Unit Price, and <code>doc discount</code> beside Discount.
+        <strong>Unmatched rows from both Excel and Doc are retained and color highlighted.</strong>
+      </p>
+    </header>
+
+    <!-- Upload Section -->
+    <div class="upload-grid">
+      <!-- Excel Uploader Card -->
+      <div class="upload-card" id="excelDropZone">
+        <div class="card-icon excel-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="8" y1="13" x2="16" y2="17"></line>
+            <line x1="16" y1="13" x2="8" y2="17"></line>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h3>1. Upload Excel File (.xlsx)</h3>
+          <p>Sales Ledger with Product Name, Model, Barcode, Qty, Price, Discount</p>
+          <label for="excelInput" class="file-label" id="excelLabel">
+            <span id="excelFileName">Choose Excel File</span>
+          </label>
+          <input type="file" id="excelInput" accept=".xlsx, .xls" />
+          <div class="file-status" id="excelStatus">No file selected</div>
+        </div>
+      </div>
+
+      <!-- Docx Uploader Card -->
+      <div class="upload-card" id="docDropZone">
+        <div class="card-icon doc-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <line x1="10" y1="9" x2="8" y2="9"></line>
+          </svg>
+        </div>
+        <div class="card-content">
+          <h3>2. Upload Word Document (.docx)</h3>
+          <p>Daily Sales Information with Goods Name, Style, Unit Price, U. Dis</p>
+          <label for="docInput" class="file-label secondary" id="docLabel">
+            <span id="docFileName">Choose Docx File</span>
+          </label>
+          <input type="file" id="docInput" accept=".docx" />
+          <div class="file-status" id="docStatus">No file selected</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions Bar -->
+    <div class="action-bar">
+      <button id="compareBtn" class="btn btn-primary" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 3 21 3 21 8"></polyline>
+          <line x1="4" y1="20" x2="21" y2="3"></line>
+          <polyline points="21 16 21 21 16 21"></polyline>
+          <line x1="15" y1="15" x2="21" y2="21"></line>
+          <line x1="4" y1="4" x2="9" y2="9"></line>
+        </svg>
+        Compare &amp; Generate Excel
+      </button>
+
+      <button id="downloadBtn" class="btn btn-success" style="display: none;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Download Final Comparison Excel
+      </button>
+    </div>
+
+    <!-- Stats Summary Card -->
+    <div class="stats-container" id="statsContainer" style="display: none;">
+      <div class="stat-card">
+        <div class="stat-label">Matched Items</div>
+        <div class="stat-value matched-color" id="matchedCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Excel Only (Unmatched)</div>
+        <div class="stat-value excel-unmatched-color" id="excelUnmatchedCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Doc Only (Unmatched)</div>
+        <div class="stat-value doc-unmatched-color" id="docUnmatchedCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Result Rows</div>
+        <div class="stat-value total-color" id="totalRowCount">0</div>
+      </div>
+    </div>
+
+    <!-- Legend & Filter Bar -->
+    <div class="filter-bar" id="filterBar" style="display: none;">
+      <div class="legend-group">
+        <span class="legend-item"><span class="legend-badge legend-matched"></span> Matched in Both</span>
+        <span class="legend-item"><span class="legend-badge legend-excel"></span> Excel Only (Not in Doc)</span>
+        <span class="legend-item"><span class="legend-badge legend-doc"></span> Doc Only (Not in Excel)</span>
+      </div>
+      <div class="filter-controls">
+        <label>Filter:</label>
+        <select id="statusFilter">
+          <option value="ALL">Show All Rows</option>
+          <option value="MATCHED">Matched Only</option>
+          <option value="UNMATCHED">Unmatched Only (Both)</option>
+          <option value="EXCEL_ONLY">Excel Only</option>
+          <option value="DOC_ONLY">Doc Only</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Preview Table Section -->
+    <section class="preview-section" id="previewSection" style="display: none;">
+      <div class="preview-header">
+        <div>
+          <h2>Final Result Comparison Table</h2>
+          <p>Columns: Status | Product Name | Model | Barcode | Unit price | doc u. price | Discount | doc discount</p>
+        </div>
+        <div class="preview-badge" id="previewCountBadge">0 records</div>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="previewTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Status</th>
+              <th>Product Name</th>
+              <th>Model (Key)</th>
+              <th>Barcode</th>
+              <th>Unit price</th>
+              <th class="col-highlight">doc u. price</th>
+              <th>Discount</th>
+              <th class="col-highlight">doc discount</th>
+            </tr>
+          </thead>
+          <tbody id="previewTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
